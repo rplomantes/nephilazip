@@ -121,7 +121,7 @@ if (!$plugin) {
     exit('Enrol plugin not available');
 }
 
-$plugin->enrol_user($instance, $user);
+$plugin->enrol_user($instance, $userid);
 
 echo 'OK';
 exit;
