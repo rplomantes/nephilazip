@@ -26,6 +26,6 @@ defined('MOODLE_INTERNAL') || die();
 
 $plugin->component = 'enrol_nephilazip';
 $plugin->release = '1.0.0';
-$plugin->version = 2025111601;
-$plugin->requires = 2022041900; // Moodle 4.1 (not 4.2)
+$plugin->version = 2025112401; 
+$plugin->requires = 2025111800; // Moodle 4.5
 $plugin->maturity = MATURITY_STABLE;

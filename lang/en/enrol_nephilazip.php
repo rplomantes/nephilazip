@@ -37,4 +37,7 @@ $string['nephilazip:config'] = 'Configure Nephila ZIP enrol instances';
 $string['environment'] = 'Environment';
 $string['sandbox'] = 'Sandbox (Test Mode)';
 $string['production'] = 'Production (Live)';
+$string['baseurl'] = 'Nephila Zip API Base URL';
+$string['baseurl_desc'] = 'Enter the base URL for Nephila Zip. For sandbox use https://sandbox-api.nephila_zip.co, for production use https://api.nephila_zip.co';
+
 

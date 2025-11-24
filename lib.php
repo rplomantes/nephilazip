@@ -28,35 +28,41 @@ class enrol_nephilazip_plugin extends enrol_plugin {
         return [
             'status' => 0,
             'cost' => '0.00',
-            // 'customchar1' => '' // API Key
         ];
     }
 
     public function allow_enrol($instance) {
-        return false; // Block manual enrol button
+        return false; // Disable manual enrol button
     }
 
     public function allow_manage($instance) {
-        return true; // Allow teachers to configure
+        return true; // Teachers may configure
     }
 
     public function use_standard_editing_ui() {
         return true;
     }
 
+    /**
+     * REQUIRED IN MOODLE 4.5
+     */
+    public function can_hide_show_instance($instance) {
+        // Allow hiding and showing the instance in course enrolment methods
+        return true;
+    }
+
+    /**
+     * ALTERNATIVE REQUIRED METHOD (optional)
+     * If your plugin does not support suspend/resume
+     */
+    public function can_delete_instance($instance) {
+        return true; // Or false if you want to block deletion
+    }
+
     public function edit_instance_form($instance, MoodleQuickForm $mform, $context) {
         $mform->addElement('text', 'cost', get_string('cost', 'enrol_nephilazip'), ['size' => 6]);
         $mform->setType('cost', PARAM_FLOAT);
         $mform->addRule('cost', null, 'numeric', null, 'client');
-
-        // $mform->addElement('text', 'customchar1', get_string('apikey', 'enrol_nephilazip'));
-        // $mform->setType('customchar1', PARAM_TEXT);
-        // $mform->addHelpButton('customchar1', 'apikey', 'enrol_nephilazip');
-
-        // Show webhook URL
-        // $webhookurl = new moodle_url('/enrol/nephilazip/webhook.php');
-        // $mform->addElement('static', 'webhookinfo', get_string('webhookurl', 'enrol_nephilazip'),
-        //     get_string('webhookurl_desc', 'enrol_nephilazip', $webhookurl->out(false)));
     }
 
     public function edit_instance_validation($data, $files, $instance, $context) {
@@ -64,27 +70,21 @@ class enrol_nephilazip_plugin extends enrol_plugin {
         if (!is_numeric($data['cost']) || $data['cost'] < 0) {
             $errors['cost'] = get_string('invalidcost', 'enrol_nephilazip');
         }
-        // if (empty($data['customchar1'])) {
-        //     $errors['customchar1'] = get_string('apikeyrequired', 'enrol_nephilazip');
-        // }
         return $errors;
     }
 
-    // public function can_add_instance($courseid) {
-    //     return true;
-    // }
     public function can_add_instance($courseid) {
-    global $DB;
-    // Only allow if no instance exists yet
-    return !$DB->record_exists('enrol', [
-        'enrol' => 'nephilazip',
-        'courseid' => $courseid
-    ]);
-}
+        global $DB;
+        return !$DB->record_exists('enrol', [
+            'enrol' => 'nephilazip',
+            'courseid' => $courseid
+        ]);
+    }
 
-    public function user_enrolment($instance, $user, $timestart = 0, $timeend = 0, 
+    public function user_enrolment($instance, $user, $timestart = 0, $timeend = 0,
                                    $status = ENROL_USER_ACTIVE, $recovergrades = null) {
         global $DB;
+
         $ue = new stdClass();
         $ue->enrolid = $instance->id;
         $ue->userid = $user->id;
@@ -97,14 +97,17 @@ class enrol_nephilazip_plugin extends enrol_plugin {
         $ue->id = $DB->insert_record('user_enrolments', $ue);
 
         $context = context_course::instance($instance->courseid);
+
         $event = \core\event\user_enrolment_created::create([
             'objectid' => $ue->id,
             'context' => $context,
             'relateduserid' => $user->id,
             'other' => ['enrol' => $instance->enrol]
         ]);
+
         $event->add_record_snapshot('user_enrolments', $ue);
         $event->trigger();
+
         return $ue;
     }
 }
