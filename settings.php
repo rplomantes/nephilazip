@@ -1,4 +1,5 @@
 <?php
+
 defined('MOODLE_INTERNAL') || die();
 
 if ($hassiteconfig) {
@@ -12,7 +13,7 @@ if ($hassiteconfig) {
         ''
     ));
 
-    // API Key (password unmask)
+    // API Key
     $settings->add(new admin_setting_configpasswordunmask(
         'enrol_nephilazip/apikey',
         get_string('apikey', 'enrol_nephilazip'),
@@ -20,23 +21,26 @@ if ($hassiteconfig) {
         '',
         PARAM_RAW_TRIMMED
     ));
-    $settings->add(new admin_setting_heading(
-        'enrol_nephilazip/apikey_help',
-        '',
-        get_string('apikey_help', 'enrol_nephilazip')
-    ));
-   ///checkout url
-    $settings->add(new admin_setting_configtext(
-    'enrol_nephilazip/baseurl',
-    get_string('baseurl', 'enrol_nephilazip'),
-    get_string('baseurl_desc', 'enrol_nephilazip'),
-    'https://sandbox-api.nephila_zip.co',
-    PARAM_URL
-));
 
-    // -------------------------------
-    // Environment Selector
-    // -------------------------------
+    // Sandbox URL
+    $settings->add(new admin_setting_configtext(
+        'enrol_nephilazip/sandbox_url',
+        get_string('sandbox_url', 'enrol_nephilazip'),
+        get_string('sandbox_url_desc', 'enrol_nephilazip'),
+        'https://sandbox-api.nephila_zip.ph',
+        PARAM_URL
+    ));
+
+    // Production URL
+    $settings->add(new admin_setting_configtext(
+        'enrol_nephilazip/production_url',
+        get_string('production_url', 'enrol_nephilazip'),
+        get_string('production_url_desc', 'enrol_nephilazip'),
+        'https://api.nephila_zip.ph',
+        PARAM_URL
+    ));
+
+    // Environment selector
     $envoptions = [
         'sandbox' => get_string('sandbox', 'enrol_nephilazip'),
         'production' => get_string('production', 'enrol_nephilazip')
@@ -49,9 +53,7 @@ if ($hassiteconfig) {
         $envoptions
     ));
 
-    // -------------------------------
-    // Webhook URL Display
-    // -------------------------------
+    // Webhook URL
     $webhookurl = new moodle_url('/enrol/nephilazip/webhook.php');
     $settings->add(new admin_setting_heading(
         'enrol_nephilazip/webhook',
