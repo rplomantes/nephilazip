@@ -1,10 +1,12 @@
 <?php
 require_once(__DIR__ . '/../../config.php');
-
-$courseid = required_param('courseid', PARAM_INT);
 require_login();
+
+global $DB;
+
+$courseid = required_param('id', PARAM_INT);
 $course = get_course($courseid);
-$context = context_course::instance($course->id);
+$context = context_course::instance($courseid);
 require_capability('enrol/nephilazip:manage', $context);
 
 $instance = $DB->get_record('enrol', [
@@ -13,16 +15,12 @@ $instance = $DB->get_record('enrol', [
     'status' => 1
 ], '*', MUST_EXIST);
 
-// if (empty($instance->customchar1)) {
-//     throw new moodle_exception('apikeyrequired', 'enrol_nephilazip');
-// }
-
-// $apikey = $instance->customchar1;
 $api_key = get_config('enrol_nephilazip', 'apikey');
 if (empty($api_key)) {
     throw new moodle_exception('apikeyrequired', 'enrol_nephilazip');
 }
-$amount = (int)round($instance->cost * 100); // Convert to cents
+
+$amount = (int)round($instance->cost * 100);
 
 $payload = [
     'currency' => 'PHP',
@@ -43,7 +41,7 @@ $api_base = ($env === 'production')
 
 $ch = curl_init($api_base . '/v2/sessions');
 curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-curl_setopt($ch, CURLOPT_USERPWD, $apikey . ':');
+curl_setopt($ch, CURLOPT_USERPWD, $api_key . ':');
 curl_setopt($ch, CURLOPT_HTTPHEADER, [
     'Accept: application/json',
     'Content-Type: application/json'
