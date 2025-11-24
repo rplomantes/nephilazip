@@ -22,92 +22,114 @@
  * @license     https://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
+defined('MOODLE_INTERNAL') || die();
+
 class enrol_nephilazip_plugin extends enrol_plugin {
 
+    /**
+     * Default values when a new enrolment instance is created.
+     */
     public function get_newinstance_defaults() {
         return [
-            'status' => 0,
-            'cost' => '0.00',
+            'status' => ENROL_INSTANCE_ENABLED,
+            'cost'   => '0.00',
         ];
     }
 
-    public function allow_enrol($instance) {
-        return false; // Disable manual enrol button
+    /**
+     * Disable manual self-enrol button (always false).
+     */
+    public function allow_enrol(stdClass $instance) {
+        return false;
     }
 
-    public function allow_manage($instance) {
-        return true; // Teachers may configure
+    /**
+     * Allow managers/teachers to configure this method.
+     */
+    public function allow_manage(stdClass $instance) {
+        return true;
     }
 
+    /**
+     * Use Moodle's standard form for editing instances.
+     */
     public function use_standard_editing_ui() {
         return true;
     }
 
     /**
-     * REQUIRED IN MOODLE 4.5
+     * (Required in Moodle 4.5)  
+     * Allow hiding or showing this instance.
      */
     public function can_hide_show_instance($instance) {
-        // Allow hiding and showing the instance in course enrolment methods
         return true;
     }
 
     /**
-     * ALTERNATIVE REQUIRED METHOD (optional)
-     * If your plugin does not support suspend/resume
+     * Allows deleting an instance.
      */
     public function can_delete_instance($instance) {
-        return true; // Or false if you want to block deletion
+        return true;
     }
 
+    /**
+     * Extra custom fields for the enrol instance.
+     */
     public function edit_instance_form($instance, MoodleQuickForm $mform, $context) {
+
         $mform->addElement('text', 'cost', get_string('cost', 'enrol_nephilazip'), ['size' => 6]);
-        $mform->setType('cost', PARAM_FLOAT);
+        $mform->setType('cost', PARAM_RAW_TRIMMED);
         $mform->addRule('cost', null, 'numeric', null, 'client');
     }
 
+    /**
+     * Validate instance editing form fields.
+     */
     public function edit_instance_validation($data, $files, $instance, $context) {
         $errors = [];
+
         if (!is_numeric($data['cost']) || $data['cost'] < 0) {
             $errors['cost'] = get_string('invalidcost', 'enrol_nephilazip');
         }
+
         return $errors;
     }
 
+    /**
+     * Only allow one enrol instance per course.
+     */
     public function can_add_instance($courseid) {
         global $DB;
+
         return !$DB->record_exists('enrol', [
-            'enrol' => 'nephilazip',
-            'courseid' => $courseid
+            'enrol'    => 'nephilazip',
+            'courseid' => $courseid,
         ]);
     }
 
-    public function user_enrolment($instance, $user, $timestart = 0, $timeend = 0,
-                                   $status = ENROL_USER_ACTIVE, $recovergrades = null) {
+    /**
+     * Enrol a user after successful Zip payment.
+     * 
+     * This function is usually called by webhook script in locallib.php
+     */
+    public function enrol_user($instance, $user, $timestart = 0, $timeend = 0,
+                           $status = ENROL_USER_ACTIVE, $recovergrades = null)  {
         global $DB;
 
+        $timestart = $timestart ?: time();
+
+        // Create record.
         $ue = new stdClass();
-        $ue->enrolid = $instance->id;
-        $ue->userid = $user->id;
-        $ue->timestart = $timestart ?: time();
-        $ue->timeend = $timeend;
-        $ue->status = $status;
-        $ue->modifierid = $user->id;
-        $ue->timecreated = time();
+        $ue->enrolid      = $instance->id;
+        $ue->userid       = $user->id;
+        $ue->timestart    = $timestart;
+        $ue->timeend      = $timeend;
+        $ue->status       = $status;
+        $ue->modifierid   = $user->id;
+        $ue->timecreated  = time();
         $ue->timemodified = time();
+
+        // Insert enrolment.
         $ue->id = $DB->insert_record('user_enrolments', $ue);
 
-        $context = context_course::instance($instance->courseid);
 
-        $event = \core\event\user_enrolment_created::create([
-            'objectid' => $ue->id,
-            'context' => $context,
-            'relateduserid' => $user->id,
-            'other' => ['enrol' => $instance->enrol]
-        ]);
-
-        $event->add_record_snapshot('user_enrolments', $ue);
-        $event->trigger();
-
-        return $ue;
-    }
-}
