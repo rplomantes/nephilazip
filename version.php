@@ -26,8 +26,7 @@ defined('MOODLE_INTERNAL') || die();
 
 $plugin->component = 'enrol_nephilazip';   // Full plugin name (required)
 $plugin->version   = 2025012500;           // Plugin version (matches upgrade.php)
-//$plugin->requires  = 2023051500;           // Moodle 4.1 minimum recommended
-$plugin->requires = 2022112800;
+$plugin->requires  = 2023051500;           // Moodle 4.1 minimum recommended
 $plugin->maturity  = MATURITY_STABLE;      // Stable plugin
 $plugin->release   = '4.5.0';              // Human-readable release
 
