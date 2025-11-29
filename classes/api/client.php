@@ -24,70 +24,86 @@
 
 namespace enrol_nephilazip\api;
 
+
 defined('MOODLE_INTERNAL') || die();
 
-class client {
 
+class client
+{
     protected string $apikey;
     protected string $secret;
     protected string $baseurl;
 
-    public function __construct() {
+
+    public function __construct()
+    {
         $env = get_config('enrol_nephilazip', 'environment', 'sandbox');
-        $this->apikey  = get_config('enrol_nephilazip', 'apikey');
-        $this->secret  = get_config('enrol_nephilazip', 'secretkey');
+        $this->apikey = get_config('enrol_nephilazip', 'apikey');
+        $this->secret = get_config('enrol_nephilazip', 'secretkey');
         $this->baseurl = $env === 'production'
             ? get_config('enrol_nephilazip', 'production_url')
             : get_config('enrol_nephilazip', 'sandbox_url');
     }
+    public function createCheckout(int $courseid, int $userid, string $clientRef, float $amount, string $email, string $name): string
+    {
+        global $CFG;
 
-    /**
-     * Create a checkout URL for the user to pay.
-     */
-   public function createCheckout(string $clientRef, float $amount, string $email, string $name): string {
-    $payload = [
-        'client_reference_id' => $clientRef,
-        'amount'              => intval($amount * 100), // convert to cents
-        'email'               => $email,
-        'name'                => $name,
-    ];
 
-    // Initialize cURL
-    $ch = curl_init($this->baseUrl . '/checkout');
-    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-    curl_setopt($ch, CURLOPT_HTTPHEADER, [
-        'Accept: application/json',
-        'Content-Type: application/json',
-        'Authorization: Bearer ' . $this->apiKey
-    ]);
-    curl_setopt($ch, CURLOPT_POST, true);
-    curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($payload));
+        $amountint = intval(round($amount * 100)); // centavos
 
-    // Execute cURL request
-    $response = curl_exec($ch);
-    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-    curl_close($ch);
 
-    // Debugging + error check
-    if ($httpCode !== 200) {
-        debugging('ZIP API error (HTTP ' . $httpCode . '): ' . $response, DEBUG_DEVELOPER);
-        throw new \moodle_exception('zip_api_error', 'enrol_nephilazip');
+        $payload = [
+            'client_reference_id' => $clientRef,
+            'amount' => $amountint,
+            'currency' => 'PHP',
+            'email' => $email,
+            'name' => $name,
+            'success_url' => $CFG->wwwroot . "/enrol/nephilazip/return.php?courseid={$courseid}&userid={$userid}&ref={$clientRef}",
+            'cancel_url' => $CFG->wwwroot . "/course/view.php?id={$courseid}",
+        ];
+
+
+        $ch = curl_init(rtrim($this->baseurl, '/') . '/checkout');
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_HTTPHEADER, [
+            'Accept: application/json',
+            'Content-Type: application/json',
+            'Authorization: Bearer ' . $this->apikey,
+        ]);
+        curl_setopt($ch, CURLOPT_POST, true);
+        curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($payload));
+
+
+        $response = curl_exec($ch);
+        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $curlErr = curl_error($ch);
+        curl_close($ch);
+
+
+        if ($response === false) {
+            debugging('ZIP API curl error: ' . $curlErr, DEBUG_DEVELOPER);
+            throw new \moodle_exception('zip_api_error', 'enrol_nephilazip');
+        }
+
+
+        if ($httpCode < 200 || $httpCode >= 300) {
+            debugging('ZIP API error (HTTP ' . $httpCode . '): ' . $response, DEBUG_DEVELOPER);
+            throw new \moodle_exception('zip_api_error', 'enrol_nephilazip');
+        }
+
+
+        $data = json_decode($response, true);
+        if (empty($data['payment_url'])) {
+            debugging('Invalid ZIP response: ' . $response, DEBUG_DEVELOPER);
+            throw new \moodle_exception('invalid_zip_response', 'enrol_nephilazip');
+        }
+
+
+        return $data['payment_url'];
     }
 
-    $data = json_decode($response, true);
-
-    if (!isset($data['payment_url'])) {
-        throw new \moodle_exception('invalid_zip_response', 'enrol_nephilazip');
-    }
-
-    return $data['payment_url'];
-}
-
-
-    /**
-     * Verify incoming webhook using secret key (HMAC signature).
-     */
-    public function verifyWebhook(string $payload, string $signature): bool {
+    public function verifyWebhook(string $payload, string $signature): bool
+    {
         if (empty($this->secret) || empty($signature)) {
             return false;
         }
@@ -95,22 +111,59 @@ class client {
         return hash_equals($hash, $signature);
     }
 
-    /**
-     * Get payment details from ZIP (optional API call).
-     */
-    public function getPaymentDetails(string $paymentid): array {
-        $url = $this->baseurl . '/payments/' . urlencode($paymentid);
+    public function getPaymentDetails(string $paymentid): array
+    {
+        $url = rtrim($this->baseurl, '/') . '/payments/' . urlencode($paymentid);
 
-        $opts = [
-            'http' => [
-                'header' => "Authorization: Bearer {$this->apikey}\r\n",
-                'method' => 'GET',
-            ],
-        ];
 
-        $context = stream_context_create($opts);
-        $response = file_get_contents($url, false, $context);
+        $ch = curl_init($url);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_HTTPHEADER, [
+            'Accept: application/json',
+            'Authorization: Bearer ' . $this->apikey,
+        ]);
 
-        return $response ? json_decode($response, true) : [];
+
+        $response = curl_exec($ch);
+        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_close($ch);
+
+
+        if ($response === false || $httpCode < 200 || $httpCode >= 300) {
+            return [];
+        }
+
+
+        return json_decode($response, true) ?? [];
+    }
+    public function getPaymentByReference(string $clientRef): array
+    {
+        $url = rtrim($this->baseurl, '/') . '/payments?client_reference_id=' . urlencode($clientRef);
+
+
+        $ch = curl_init($url);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_HTTPHEADER, [
+            'Accept: application/json',
+            'Authorization: Bearer ' . $this->apikey,
+        ]);
+
+
+        $response = curl_exec($ch);
+        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_close($ch);
+
+
+        if ($response === false || $httpCode < 200 || $httpCode >= 300) {
+            return [];
+        }
+
+
+        $data = json_decode($response, true);
+        // Expecting an array of payments or an object with data[] depending on provider
+        if (isset($data['data'])) {
+            return $data['data'];
+        }
+        return is_array($data) ? $data : [];
     }
 }

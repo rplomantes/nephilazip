@@ -28,38 +28,60 @@
 require_once(__DIR__ . '/../../config.php');
 require_login();
 
-global $DB, $OUTPUT, $PAGE;
+
+global $DB, $USER;
+
 
 $courseid = required_param('courseid', PARAM_INT);
-$course = $DB->get_record('course', ['id' => $courseid], '*', MUST_EXIST);
-require_course_login($course);
+$clientref = required_param('ref', PARAM_RAW);
 
-$context = context_course::instance($course->id);
-$PAGE->set_context($context);
-$PAGE->set_url(new moodle_url('/enrol/nephilazip/check_status.php', ['courseid' => $courseid]));
-$PAGE->set_title('Check Payment Status');
 
-echo $OUTPUT->header();
+// Attempt to find payment by reference via API
+$client = new \enrol_nephilazip\api\client();
+$payments = $client->getPaymentByReference($clientref);
 
-$clientref = "course{$courseid}_user{$USER->id}";
 
-// Call Zip API to get latest status
-$status = \enrol_nephilazip\api\client::get_payment_status($clientref);
+$foundPaid = false;
+$paymentid = null;
+$status = 'not_found';
 
-if ($status === 'captured') {
-    $plugin = enrol_get_plugin('nephilazip');
-    $instance = $DB->get_record('enrol', ['courseid' => $courseid, 'enrol' => 'nephilazip']);
-    if ($instance) {
-        $plugin->enrol_user($instance, $USER);
-        echo $OUTPUT->notification('Payment confirmed! You are now enrolled.', 'success');
-        redirect(new moodle_url('/course/view.php?id=' . $courseid), 'Loading course...', 3);
+
+foreach ($payments as $p) {
+    // Typical provider response fields may vary; try common keys
+    $pstatus = $p['status'] ?? ($p['payment_status'] ?? '');
+    $pid = $p['id'] ?? ($p['payment_id'] ?? null);
+    if ($pstatus === 'paid' || $pstatus === 'captured' || $pstatus === 'succeeded') {
+        $foundPaid = true;
+        $paymentid = $pid;
+        $status = $pstatus;
+        break;
     }
-} elseif (in_array($status, ['failed', 'declined', 'cancelled'])) {
-    echo $OUTPUT->notification("Payment was {$status}. Please try again.", 'error');
-} else {
-    echo $OUTPUT->notification('Payment is still pending. Try again later.', 'info');
 }
 
-echo '<a href="' . $CFG->wwwroot . '/course/view.php?id=' . $courseid . '" class="btn btn-secondary">Back to Course</a>';
 
-echo $OUTPUT->footer();
+if ($foundPaid) {
+    // Enrol user now using webhook-like logic
+    if (preg_match('/^course(\d+)_user(\d+)$/', $clientref, $m)) {
+        $courseid = (int)$m[1];
+        $userid = (int)$m[2];
+
+
+        $instance = $DB->get_record('enrol', [
+            'enrol' => 'nephilazip',
+            'courseid' => $courseid,
+            'status' => ENROL_INSTANCE_ENABLED
+        ], '*', IGNORE_MISSING);
+
+
+        if ($instance) {
+            $plugin = enrol_get_plugin('nephilazip');
+            $roleid = isset($instance->roleid) && $instance->roleid ? (int)$instance->roleid : $DB->get_field('role', 'id', ['shortname' => 'student']);
+            $plugin->enrol_user($instance, $userid, $roleid, time(), 0);
+            redirect(new moodle_url('/course/view.php', ['id' => $courseid]), 'Payment confirmed — you are now enrolled');
+        }
+    }
+}
+
+
+// Not paid or not found
+redirect(new moodle_url('/enrol/nephilazip/return.php', ['courseid' => $courseid, 'userid' => $USER->id, 'ref' => $clientref]));

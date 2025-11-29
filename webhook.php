@@ -22,44 +22,30 @@
  * @license     https://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
-
-define('NO_DEBUG_DISPLAY', true);
-define('NO_MOODLE_COOKIES', true);
-define('CLI_SCRIPT', true);
-
 require(__DIR__ . '/../../config.php');
+require_once(__DIR__ . '/locallib.php');
 
-global $DB;
-
-// Only allow POST
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     http_response_code(405);
     exit('Method not allowed');
 }
 
-// Disable compression/buffering
-@ini_set('zlib.output_compression', 'Off');
-@ini_set('output_buffering', 'Off');
-@ini_set('implicit_flush', 'On');
-ob_implicit_flush(true);
-
-// Read raw input
 $input = file_get_contents('php://input');
 if (!$input) {
     http_response_code(400);
     exit('Empty payload');
 }
 
-// Get signature
 $signature = $_SERVER['HTTP_X_ZIP_SIGNATURE'] ?? '';
-require_once(__DIR__ . '/locallib.php');
+$client = new \enrol_nephilazip\api\client();
 
-if (!nephilazip_verify_webhook($input, $signature)) {
+
+if (!$client->verifyWebhook($input, $signature)) {
     http_response_code(401);
     exit('Invalid signature');
 }
 
-// Decode JSON
+
 $event = json_decode($input, true);
 if (!$event || empty($event['type'])) {
     http_response_code(400);
@@ -67,38 +53,36 @@ if (!$event || empty($event['type'])) {
 }
 
 if ($event['type'] !== 'payment.captured') {
-    http_response_code(200); // Acknowledge other events
-    exit('Not a payment capture event');
+    // acknowledge other events
+    http_response_code(200);
+    exit('Event ignored');
 }
+$data = $event['data'] ?? [];
+$amount = (int)($data['amount'] ?? 0);
+$client_ref = $data['client_reference_id'] ?? '';
 
-nephilazip_log("Processing payment webhook", $event);
 
-// Extract data
-$payment = $event['data'] ?? [];
-$amount = (int)($payment['amount'] ?? 0);
-
-$client_ref = $payment['client_reference_id'] ?? '';
-if (!preg_match('/^course(\d+)_user(\d+)$/', $client_ref, $matches)) {
+if (!preg_match('/^course(\d+)_user(\d+)$/', $client_ref, $m)) {
     http_response_code(400);
-    nephilazip_log("Invalid client reference format", ['ref' => $client_ref]);
     exit('Invalid client reference');
 }
 
-$courseid = (int)$matches[1];
-$userid   = (int)$matches[2];
 
-// Validate course and user
+$courseid = (int)$m[1];
+$userid = (int)$m[2];
+
 $instance = $DB->get_record('enrol', [
     'enrol' => 'nephilazip',
     'courseid' => $courseid,
     'status' => ENROL_INSTANCE_ENABLED
-]);
+], '*', IGNORE_MISSING);
+
 
 if (!$instance) {
     http_response_code(404);
-    nephilazip_log("Enrol instance not found", ['courseid' => $courseid]);
-    exit('Enrolment instance not found');
+    exit('Enrol instance not found');
 }
+
 
 $user = $DB->get_record('user', ['id' => $userid, 'deleted' => 0, 'suspended' => 0]);
 if (!$user) {
@@ -106,22 +90,26 @@ if (!$user) {
     exit('User not found or suspended');
 }
 
-// Verify amount
+
 $expectedamount = (int)round($instance->cost * 100);
 if ($amount !== $expectedamount) {
     http_response_code(400);
-    nephilazip_log("Amount mismatch", compact('amount', 'expectedamount', 'courseid', 'userid'));
     exit('Amount mismatch');
 }
 
-// Perform enrolment
+
 $plugin = enrol_get_plugin('nephilazip');
 if (!$plugin) {
     http_response_code(500);
     exit('Enrol plugin not available');
 }
 
-$plugin->enrol_user($instance, $userid);
 
+// Enrol the user (use roleid from instance if present)
+$roleid = isset($instance->roleid) && $instance->roleid ? (int)$instance->roleid : $DB->get_field('role', 'id', ['shortname' => 'student']);
+$plugin->enrol_user($instance, $userid, $roleid, time(), 0);
+
+
+http_response_code(200);
 echo 'OK';
 exit;

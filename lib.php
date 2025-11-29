@@ -24,36 +24,44 @@
 
 defined('MOODLE_INTERNAL') || die();
 
-class enrol_nephilazip_plugin extends enrol_plugin {
+class enrol_nephilazip_plugin extends enrol_plugin
+{
 
-    public function get_newinstance_defaults() {
+    public function get_newinstance_defaults()
+    {
         return [
             'status' => ENROL_INSTANCE_ENABLED,
             'cost'   => '0.00',
         ];
     }
 
-    public function allow_enrol(stdClass $instance) {
+    public function allow_enrol(stdClass $instance)
+    {
         return false;
     }
 
-    public function allow_manage(stdClass $instance) {
+    public function allow_manage(stdClass $instance)
+    {
         return true;
     }
 
-    public function use_standard_editing_ui() {
+    public function use_standard_editing_ui()
+    {
         return true;
     }
 
-    public function can_hide_show_instance($instance) {
+    public function can_hide_show_instance($instance)
+    {
         return true;
     }
 
-    public function can_delete_instance($instance) {
+    public function can_delete_instance($instance)
+    {
         return true;
     }
 
-    public function edit_instance_form($instance, MoodleQuickForm $mform, $context) {
+    public function edit_instance_form($instance, MoodleQuickForm $mform, $context)
+    {
 
         $mform->addElement('text', 'cost', get_string('cost', 'enrol_nephilazip'), ['size' => 6]);
         $mform->setType('cost', PARAM_RAW_TRIMMED);
@@ -63,7 +71,8 @@ class enrol_nephilazip_plugin extends enrol_plugin {
         $mform->setDefault('cost', $instance->cost ?? '0.00');
     }
 
-    public function edit_instance_validation($data, $files, $instance, $context) {
+    public function edit_instance_validation($data, $files, $instance, $context)
+    {
         $errors = [];
 
         if (!is_numeric($data['cost']) || $data['cost'] < 0) {
@@ -73,7 +82,8 @@ class enrol_nephilazip_plugin extends enrol_plugin {
         return $errors;
     }
 
-    public function can_add_instance($courseid) {
+    public function can_add_instance($courseid)
+    {
         global $DB;
 
         return !$DB->record_exists('enrol', [
@@ -82,57 +92,100 @@ class enrol_nephilazip_plugin extends enrol_plugin {
         ]);
     }
 
-    public function enrol_user(stdClass $instance, $userid, $roleid = null, $timestart = 0, $timeend = 0, $status = null, $recovergrades = null) {
-    global $DB, $USER;
+    public function enrol_user(stdClass $instance, $userid, $roleid = null, $timestart = 0, $timeend = 0, $status = null, $recovergrades = null)
+    {
+        global $DB, $USER;
 
-    // Use ENROL_USER_ACTIVE if $status is null (matching parent behavior)
-    $final_status = is_null($status) ? ENROL_USER_ACTIVE : $status;
+        // Use ENROL_USER_ACTIVE if $status is null (matching parent behavior)
+        $final_status = is_null($status) ? ENROL_USER_ACTIVE : $status;
 
-    // Optional: validate user exists (optional but safe)
-    // $user = $DB->get_record('user', ['id' => $userid], '*', MUST_EXIST);
+        // Optional: validate user exists (optional but safe)
+        // $user = $DB->get_record('user', ['id' => $userid], '*', MUST_EXIST);
 
-    $timestart = $timestart ?: time();
+        $timestart = $timestart ?: time();
 
-    // Check if already enrolled
-    if ($ue = $DB->get_record('user_enrolments', ['enrolid' => $instance->id, 'userid' => $userid])) {
-        // Update only if something changed
-        if ($ue->timestart != $timestart || $ue->timeend != $timeend || $ue->status != $final_status) {
-            $ue->timestart    = $timestart;
-            $ue->timeend      = $timeend;
-            $ue->status       = $final_status;
-            $ue->modifierid   = $USER->id ?? $userid;
-            $ue->timemodified = time();
-            $DB->update_record('user_enrolments', $ue);
+        // Check if already enrolled
+        if ($ue = $DB->get_record('user_enrolments', ['enrolid' => $instance->id, 'userid' => $userid])) {
+            // Update only if something changed
+            if ($ue->timestart != $timestart || $ue->timeend != $timeend || $ue->status != $final_status) {
+                $ue->timestart    = $timestart;
+                $ue->timeend      = $timeend;
+                $ue->status       = $final_status;
+                $ue->modifierid   = $USER->id ?? $userid;
+                $ue->timemodified = time();
+                $DB->update_record('user_enrolments', $ue);
+            }
+            // No need to return anything
+            return;
         }
-        // No need to return anything
-        return;
+
+        // New enrolment
+        $ue = new stdClass();
+        $ue->enrolid      = $instance->id;
+        $ue->userid       = $userid;
+        $ue->timestart    = $timestart;
+        $ue->timeend      = $timeend;
+        $ue->status       = $final_status;
+        $ue->modifierid   = $USER->id ?? $userid;
+        $ue->timecreated  = time();
+        $ue->timemodified = $ue->timecreated;
+
+        $ue->id = $DB->insert_record('user_enrolments', $ue);
+
+        // Optional: trigger event (recommended for full compatibility)
+        // See parent method for event triggering if needed
+
+        // Optional: assign role if $roleid provided (HIGHLY recommended)
+        if ($roleid) {
+            $course = get_course($instance->courseid);
+            $context = \context_course::instance($course->id);
+            if ($this->roles_protected()) {
+                role_assign($roleid, $userid, $context->id, 'enrol_' . $this->get_name(), $instance->id);
+            } else {
+                role_assign($roleid, $userid, $context->id);
+            }
+        }
+    }
+    function enrol_nephilazip_enrol_page_hook(stdClass $instance)
+    {
+        global $USER, $OUTPUT, $CFG;
+
+        $courseid = $instance->courseid;
+        $userid = $USER->id;
+        $amount = $instance->cost ?? 0;  // Amount stored in enrol instance
+
+        // If user is already enrolled
+        if (is_enrolled(context_course::instance($courseid), $USER)) {
+            return $OUTPUT->notification(get_string('alreadyenrolled', 'enrol_nephilazip'), 'notifysuccess');
+        }
+
+        // Format amount
+        $formatted_amount = format_float($amount, 2);
+
+        // Payment URL
+        $payurl = new moodle_url('/enrol/nephilazip/purchase.php', [
+            'courseid' => $courseid,
+            'userid' => $userid,
+            'amount' => $amount
+        ]);
+
+        $button = html_writer::start_div('nephilazip-enrol-box');
+        $button .= html_writer::tag('h4', 'Course Fee: ₱ ' . $formatted_amount);
+        $button .= html_writer::tag('p', 'Click below to pay via ZIP.');
+
+        $button .= html_writer::link(
+            $payurl,
+            'Pay and Enrol',
+            ['class' => 'btn btn-primary']
+        );
+
+        $button .= html_writer::end_div();
+
+        return $button;
     }
 
-    // New enrolment
-    $ue = new stdClass();
-    $ue->enrolid      = $instance->id;
-    $ue->userid       = $userid;
-    $ue->timestart    = $timestart;
-    $ue->timeend      = $timeend;
-    $ue->status       = $final_status;
-    $ue->modifierid   = $USER->id ?? $userid;
-    $ue->timecreated  = time();
-    $ue->timemodified = $ue->timecreated;
-
-    $ue->id = $DB->insert_record('user_enrolments', $ue);
-
-    // Optional: trigger event (recommended for full compatibility)
-    // See parent method for event triggering if needed
-
-    // Optional: assign role if $roleid provided (HIGHLY recommended)
-    if ($roleid) {
-        $course = get_course($instance->courseid);
-        $context = \context_course::instance($course->id);
-        if ($this->roles_protected()) {
-            role_assign($roleid, $userid, $context->id, 'enrol_' . $this->get_name(), $instance->id);
-        } else {
-            role_assign($roleid, $userid, $context->id);
-        }
+    function enrol_nephilazip_get_action_icons(stdClass $instance)
+    {
+        return []; // Optional – no custom icons needed
     }
-}
 }

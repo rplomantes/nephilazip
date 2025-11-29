@@ -21,57 +21,49 @@
  * @copyright   2024 Roy Ploamntes <rplomantes@nephilaweb.com.ph>
  * @license     https://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
+
+
 require_once('../../config.php');
 require_login();
 
+
 global $USER, $DB;
 
-// Get course ID from URL
-$courseid = required_param('id', PARAM_INT);
 
-// Load course
+$courseid = required_param('id', PARAM_INT);
 $course = $DB->get_record('course', ['id' => $courseid], '*', MUST_EXIST);
 
-// Get active Nephila ZIP enrol instance
-$instance = $DB->get_record('enrol', [
-    'enrol' => 'nephilazip',
-    'courseid' => $courseid,
-    'status' => 1
-], '*', MUST_EXIST);
 
-// Validate cost
+$instance = $DB->get_record('enrol', [
+'enrol' => 'nephilazip',
+'courseid' => $courseid,
+'status' => ENROL_INSTANCE_ENABLED
+], '*', IGNORE_MISSING);
+
+
+if (!$instance) {
+print_error('enrolmentinstance');
+}
+
+
 $amount = floatval($instance->cost);
 if ($amount <= 0) {
-    print_error('Course cost must be greater than zero.');
+print_error('Course cost must be greater than zero.');
 }
 
-// Get environment
-$env = get_config('enrol_nephilazip', 'environment', 'sandbox');
 
-// Get base URL based on environment
-$baseurl = ($env === 'production')
-    ? get_config('enrol_nephilazip', 'production_url')
-    : get_config('enrol_nephilazip', 'sandbox_url');
-
-if (empty($baseurl)) {
-    print_error('Base URL for Nephila Zip is not configured.');
-}
-
-// Dynamic client reference
-$client_reference_id = "course{$courseid}_user{$USER->id}";
-
-// Construct checkout URL
 $client = new \enrol_nephilazip\api\client();
+$clientref = "course{$courseid}_user{$USER->id}";
+
+
+// createCheckout signature: courseid, userid, clientRef, amount, email, name
 $checkoutUrl = $client->createCheckout(
-    $courseid,
-    "course{$courseid}_user{$USER->id}",
-    $USER->email,
-    $USER->firstname . ' ' . $USER->lastname,
-    $amount
+$courseid,
+$USER->id,
+$clientref,
+$amount,
+$USER->email,
+fullname($USER)
 );
+
 redirect($checkoutUrl);
-
-
-// Redirect user to Zip checkout
-//redirect($checkouturl);
-

@@ -34,26 +34,22 @@ defined('MOODLE_INTERNAL') || die();
 function xmldb_enrol_nephilazip_install() {
     global $DB;
 
-    // Default sandbox and production URLs (should match your settings.php).
     $defaults = [
-        'apikey'         => '', // Admin must enter this manually.
-        'secretkey'      => '', // Add this if your plugin uses it.
+        'apikey'         => '',
+        'secretkey'      => '',
         'sandbox_url'    => 'https://sandbox-api.nephila_zip.ph',
-        'production_url' => 'https://api.nephila_zip.ph',
-        'environment'    => 'sandbox', // Default using sandbox.
+        'production_url' => 'https://api.nephilazip.ph',
+        'environment'    => 'sandbox',
     ];
 
-    foreach ($defaults as $key => $value) {
-        // Insert only if not already present (to avoid overwriting upgrades).
-        if (!$DB->record_exists('config_plugins', [
-            'plugin' => 'enrol_nephilazip',
-            'name'   => $key
-        ])) {
-            $record = new stdClass();
-            $record->plugin = 'enrol_nephilazip';
-            $record->name   = $key;
-            $record->value  = $value;
-            $DB->insert_record('config_plugins', $record);
+    foreach ($defaults as $name => $value) {
+        if (!$DB->record_exists('config_plugins', ['plugin' => 'enrol_nephilazip', 'name' => $name])) {
+            $DB->insert_record('config_plugins', (object)[
+                'plugin' => 'enrol_nephilazip',
+                'name'   => $name,
+                'value'  => $value
+            ]);
         }
     }
 }
+
