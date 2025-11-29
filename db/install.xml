@@ -14,7 +14,7 @@
                 <FIELD NAME="instanceid" TYPE="int" LENGTH="10" NOTNULL="true" COMMENT="Enrol instance ID"/>
                 <FIELD NAME="zip_reference" TYPE="char" LENGTH="100" NOTNULL="false" COMMENT="ZIP transaction reference number"/>
                 <FIELD NAME="status" TYPE="char" LENGTH="20" NOTNULL="false" COMMENT="pending|approved|declined|failed"/>
-                <FIELD NAME="amount" TYPE="decimal" LENGTH="10,2" NOTNULL="false" DEFAULT="0.00" COMMENT="Paid amount"/>
+                <FIELD NAME="amount" TYPE="amount" LENGTH="10,2" NOTNULL="false" DEFAULT="0.00" COMMENT="Paid amount"/>
                 <FIELD NAME="currency" TYPE="char" LENGTH="10" NOTNULL="false" DEFAULT="PHP" COMMENT="Currency"/>
                 <FIELD NAME="timecreated" TYPE="int" LENGTH="10" NOTNULL="true" COMMENT="When transaction started"/>
                 <FIELD NAME="timemodified" TYPE="int" LENGTH="10" NOTNULL="true" COMMENT="Last update time"/>
